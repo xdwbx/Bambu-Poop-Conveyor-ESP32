@@ -295,6 +295,10 @@ void handleConfig() {
         html += "<label for=\"motorRunTime\">Motor Run Time (ms):</label><input type=\"number\" id=\"motorRunTime\" name=\"motorRunTime\" value=\"" + String(motorRunTime) + "\"><br>";
         html += "<label for=\"motorWaitTime\">Motor Wait Time (ms):</label><input type=\"number\" id=\"motorWaitTime\" name=\"motorWaitTime\" value=\"" + String(motorWaitTime) + "\"><br>";
         html += "<label for=\"delayAfterRun\">Delay After Run (ms):</label><input type=\"number\" id=\"delayAfterRun\" name=\"delayAfterRun\" value=\"" + String(delayAfterRun) + "\"><br>";
+
+        html += "<label for=\"gmtOffset_sec\">Time Zone Offset:</label>";
+        html += "<input type=\"number\" id=\"gmtOffset_sec\" name=\"gmtOffset_sec\" step=\"1\" min=\"-12\" max=\"14\" value=\"" + String(gmtOffset_sec) + "\"><br>";
+
         html += "<label for=\"useMotionSensor\"> Use Motion Sensor (Disables MQTT detection):</label>";
         html += "<input type=\"checkbox\" id=\"useMotionSensor\" name=\"useMotionSensor\" " + String(useMotionSensor ? "checked" : "") + "><br>";
         html += "<label for=\"printer_model\">Printer Model:</label>";
@@ -317,7 +321,6 @@ void handleConfig() {
         html += "<div class=\"links\">";
         html += "<a href=\"/control\">Motor Manual Control Page</a>";
         html += "<a href=\"/logs\">Logs Page</a>";
-
         html += "</div></div></body></html>";
 
         server.send(200, "text/html", html);
@@ -340,8 +343,8 @@ void handleConfig() {
         useMotionSensor = server.hasArg("useMotionSensor");
         debug = server.hasArg("debug");
         motorDirection = server.arg("motorDirection").toInt();
-        gmtOffset_sec = server.arg("gmtOffset_sec").toInt();
- 
+        gmtOffset_sec = server.arg("gmtOffset_sec").toInt(); 
+
         // Store in Preferences for persistence
         preferences.putString("ssid", ssid);
         preferences.putString("password", password);
@@ -366,6 +369,7 @@ void handleConfig() {
         ESP.restart();
     }
 }
+
 
 String formatDateTime(time_t timestamp) {
     struct tm timeinfo;
