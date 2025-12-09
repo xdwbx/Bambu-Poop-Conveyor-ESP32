@@ -1,8 +1,8 @@
 #include <Arduino.h>
 // Bambu Poop Conveyor
-// 8/6/24 - TZ
-// Last updated: 3/24/25
-char version[10] = "1.3.7";
+// Jefabell Fork
+// Last updated: 12/09/2025
+char version[20] = "1.3.7 Jefabell R3";
 
 #include <WiFi.h>
 #include <WebServer.h>
@@ -33,7 +33,7 @@ char printer_model[5] = "X1";  // Default to X1
 // OPTIONAL: IF YOU WANT ACCURATE LOG TIMES UPDATE YOUR TIMEZONE HERE
 
 //const long gmtOffset_sec = -5 * 3600; // Adjust for your timezone (EST)
-int gmtOffset_sec = -6; // Default to CST (GMT-6 hours)
+int gmtOffset_sec = -7; // Default to MST
 
 // Daylight savings
 const int daylightOffset_sec = 3600; // Adjust for daylight saving time if applicable
@@ -94,6 +94,7 @@ unsigned int yellowLightState = 0;
 bool motorRunning = false;
 bool motorWaiting = false;
 bool delayAfterRunning = false;
+bool manualMotorOn = false;
 
 
 DNSServer dnsServer;
@@ -233,23 +234,53 @@ void handleControl() {
         html += "form { margin: 20px 0; }";
         html += "input[type='submit'] { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }";
         html += "input[type='submit']:hover { background-color: #45a049; }";
+        html += "a { display: inline-block; margin-top: 15px; text-decoration: none; color: #007bff; }";
+        html += "a:hover { text-decoration: underline; }";
         html += "</style>";
         html += "</head><body>";
         html += "<div class='container'>";
         html += "<h1>Manual Motor Control</h1>";
+        html += "<p>Manual motor state: <strong>" + String(manualMotorOn ? "ON" : "OFF") + "</strong></p>";
+
+        // Simulate trigger (uses your normal timing/state machine)
         html += "<form action=\"/control\" method=\"POST\">";
-        html += "<input type=\"submit\" value=\"Activate Motor\">";
+        html += "<input type=\"hidden\" name=\"action\" value=\"simulate\">";
+        html += "<input type=\"submit\" value=\"Simulate Conveyor Trigger\">";
         html += "</form>";
+
+        // Manual ON/OFF toggle (uses current speed & direction)
+        html += "<form action=\"/control\" method=\"POST\">";
+        html += "<input type=\"hidden\" name=\"action\" value=\"toggle_manual\">";
+        html += "<input type=\"submit\" value=\"" + String(manualMotorOn ? "Turn Motor OFF" : "Turn Motor ON") + "\">";
+        html += "</form>";
+
+        html += "<a href=\"/config\">Back to Config</a>";
         html += "</div>";
         html += "</body></html>";
         server.send(200, "text/html", html);
     } else if (server.method() == HTTP_POST) {
-        server.send(200, "text/plain", "Motor activated manually");
-        motorWaiting = true;
-        motorWaitStartTime = millis();
-        addLogEntry("Motor activated manually");
+        String action = server.hasArg("action") ? server.arg("action") : "";
+
+        if (action == "simulate") {
+            // Old behavior: simulate a print-triggered run
+            motorWaiting = true;
+            motorWaitStartTime = millis();
+            addLogEntry("Motor activated via manual simulate trigger");
+            server.sendHeader("Location", "/control", true);
+            server.send(302, "text/plain", "Simulated conveyor trigger");
+        } else if (action == "toggle_manual") {
+            // Toggle manual override
+            manualMotorOn = !manualMotorOn;
+            String state = manualMotorOn ? "ON" : "OFF";
+            addLogEntry("Manual Motor Override toggled " + state);
+            server.sendHeader("Location", "/control", true);
+            server.send(302, "text/plain", "Manual motor state changed to " + state);
+        } else {
+            server.send(400, "text/plain", "Unknown action");
+        }
     }
 }
+
 
 
 // Function to handle the root URL
@@ -289,16 +320,14 @@ void handleConfig() {
         html += "<form action=\"/config\" method=\"POST\" class=\"info\">";
         html += "<label for=\"ssid\">WiFi SSID:</label><input type=\"text\" id=\"ssid\" name=\"ssid\" value=\"" + String(ssid) + "\"><br>";
         html += "<label for=\"password\">WiFi Password:</label><input type=\"password\" id=\"password\" name=\"password\" value=\"" + String(password) + "\"><br>";
+        html += "<label for=\"gmtOffset_sec\">Time Zone Offset (hours from GMT, e.g. -8 PST, -7 MST, -6 CST, -5 EST):</label>";
+        html += "<input type=\"number\" id=\"gmtOffset_sec\" name=\"gmtOffset_sec\" step=\"1\" min=\"-12\" max=\"14\" value=\"" + String(gmtOffset_sec) + "\"><br>";
         html += "<label for=\"mqtt_server\">Bambu Printer IP Address:</label><input type=\"text\" id=\"mqtt_server\" name=\"mqtt_server\" value=\"" + String(mqtt_server) + "\"><br>";
         html += "<label for=\"mqtt_password\">Bambu Printer Access Code:</label><input type=\"text\" id=\"mqtt_password\" name=\"mqtt_password\" value=\"" + String(mqtt_password) + "\"><br>";
         html += "<label for=\"serial_number\">Bambu Printer Serial Number:</label><input type=\"text\" id=\"serial_number\" name=\"serial_number\" value=\"" + String(serial_number) + "\"><br>";
         html += "<label for=\"motorRunTime\">Motor Run Time (ms):</label><input type=\"number\" id=\"motorRunTime\" name=\"motorRunTime\" value=\"" + String(motorRunTime) + "\"><br>";
         html += "<label for=\"motorWaitTime\">Motor Wait Time (ms):</label><input type=\"number\" id=\"motorWaitTime\" name=\"motorWaitTime\" value=\"" + String(motorWaitTime) + "\"><br>";
         html += "<label for=\"delayAfterRun\">Delay After Run (ms):</label><input type=\"number\" id=\"delayAfterRun\" name=\"delayAfterRun\" value=\"" + String(delayAfterRun) + "\"><br>";
-
-        html += "<label for=\"gmtOffset_sec\">Time Zone Offset:</label>";
-        html += "<input type=\"number\" id=\"gmtOffset_sec\" name=\"gmtOffset_sec\" step=\"1\" min=\"-12\" max=\"14\" value=\"" + String(gmtOffset_sec) + "\"><br>";
-
         html += "<label for=\"useMotionSensor\"> Use Motion Sensor (Disables MQTT detection):</label>";
         html += "<input type=\"checkbox\" id=\"useMotionSensor\" name=\"useMotionSensor\" " + String(useMotionSensor ? "checked" : "") + "><br>";
         html += "<label for=\"printer_model\">Printer Model:</label>";
@@ -321,7 +350,9 @@ void handleConfig() {
         html += "<div class=\"links\">";
         html += "<a href=\"/control\">Motor Manual Control Page</a>";
         html += "<a href=\"/logs\">Logs Page</a>";
+        html += "<a href=\"/update\">Firmware Update</a>";
         html += "</div></div></body></html>";
+
 
         server.send(200, "text/html", html);
     } 
@@ -343,8 +374,8 @@ void handleConfig() {
         useMotionSensor = server.hasArg("useMotionSensor");
         debug = server.hasArg("debug");
         motorDirection = server.arg("motorDirection").toInt();
-        gmtOffset_sec = server.arg("gmtOffset_sec").toInt(); 
-
+        gmtOffset_sec = server.arg("gmtOffset_sec").toInt();
+ 
         // Store in Preferences for persistence
         preferences.putString("ssid", ssid);
         preferences.putString("password", password);
@@ -369,7 +400,6 @@ void handleConfig() {
         ESP.restart();
     }
 }
-
 
 String formatDateTime(time_t timestamp) {
     struct tm timeinfo;
@@ -397,6 +427,8 @@ void handleLogs() {
     html += "table { width: 100%; border-collapse: collapse; margin-top: 20px; }";
     html += "th, td { padding: 5px; border: 1px solid #ddd; text-align: left; }";
     html += "th { background-color: #f2f2f2; }";
+    html += "a { display: inline-block; margin-top: 15px; text-decoration: none; color: #007bff; }";
+    html += "a:hover { text-decoration: underline; }";
     html += "</style>";
     html += "</head><body>";
     html += "<div class='container'>";
@@ -410,7 +442,9 @@ void handleLogs() {
         }
     }
 
-    html += "</table></div></body></html>";
+    html += "</table>";
+    html += "<a href=\"/config\">Back to Config</a>";
+    html += "</div></body></html>";
     server.send(200, "text/html", html);
 }
 
@@ -539,6 +573,32 @@ void connectToMqtt() {
     }
 }
 
+// Function for web page flash
+void handleUpdatePage() {
+    String html = "<!DOCTYPE html><html><head><title>Firmware Update</title>";
+    html += "<style>";
+    html += "body { font-family: Arial, sans-serif; background-color: #f4f4f4; text-align: center; margin: 0; padding: 0; }";
+    html += ".container { max-width: 500px; margin: 50px auto; background: #fff; padding: 20px; border-radius: 5px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }";
+    html += "h2 { margin-bottom: 20px; }";
+    html += "input[type=file] { margin: 20px 0; }";
+    html += "input[type=submit] { padding: 10px 20px; border: none; border-radius: 5px; background-color: #007bff; color: white; cursor: pointer; }";
+    html += "input[type=submit]:hover { background-color: #0056b3; }";
+    html += "a { display: inline-block; margin-top: 15px; text-decoration: none; color: #007bff; }";
+    html += "</style>";
+    html += "</head><body>";
+    html += "<div class='container'>";
+    html += "<h2>Firmware Update - Bambu Poop Conveyor v" + String(version) + "</h2>";
+    html += "<form method='POST' action='/update' enctype='multipart/form-data'>";
+    html += "<input type='file' name='firmware' accept='.bin'>";
+    html += "<br>";
+    html += "<input type='submit' value='Upload & Update'>";
+    html += "</form>";
+    html += "<a href='/config'>Back to Config</a>";
+    html += "</div></body></html>";
+    server.send(200, "text/html", html);
+}
+
+
 // Function to send a push all command
 void sendPushAllCommand() {
     if (client.connected() && !pushAllCommandSent) {
@@ -639,6 +699,7 @@ void setup() {
     // Register Home Assistant API endpoints
     server.on("/run", handleManualRun);
     server.on("/status", handleMotorStatus);
+    server.on("/update", HTTP_GET, handleUpdatePage);
     server.on("/update", HTTP_POST, []() {
         server.send(200, "text/plain", "Upload complete!");
     }, handleFirmwareUpload);
@@ -731,7 +792,51 @@ void loop() {
     server.handleClient();
     dnsServer.processNextRequest();  // Handle captive portal redirects
 
-    if (isAPMode) return;  // Skip all WiFi/MQTT logic if in AP mode
+    // Manual motor override handling
+    static bool lastManualState = false;
+    if (manualMotorOn != lastManualState) {
+        lastManualState = manualMotorOn;
+        if (manualMotorOn) {
+            // Cancel any automatic sequences
+            motorWaiting = false;
+            motorRunning = false;
+            delayAfterRunning = false;
+
+            // Apply duty cycle and direction
+            ledcWrite(enable1Pin, dutyCycle);
+            if (motorDirection == 0) {
+                digitalWrite(motor1Pin1, LOW);
+                digitalWrite(motor1Pin2, HIGH);
+            } else {
+                digitalWrite(motor1Pin1, HIGH);
+                digitalWrite(motor1Pin2, LOW);
+            }
+
+            digitalWrite(redLight, HIGH);
+            digitalWrite(yellowLight, LOW);
+            digitalWrite(greenLight, LOW);
+
+            addLogEntry("Manual Motor Override: ON | Duty Cycle: " + String(dutyCycle) +
+                        " | Direction: " + String(motorDirection == 0 ? "Forward" : "Reverse"));
+        } else {
+            // Turn motor off
+            digitalWrite(motor1Pin1, LOW);
+            digitalWrite(motor1Pin2, LOW);
+            digitalWrite(redLight, LOW);
+            digitalWrite(yellowLight, LOW);
+            digitalWrite(greenLight, HIGH);
+
+            addLogEntry("Manual Motor Override: OFF");
+        }
+    }
+
+    // While manual override is ON, skip all automatic motor logic
+    if (manualMotorOn) {
+        client.loop();  // Keep MQTT alive if connected
+        return;
+    }
+
+    if (isAPMode) return;  // Skip all WiFi/MQTT logic if in AP mode and not in manual override
 
     unsigned long currentMillis = millis();
     static unsigned long disconnectedTime = 0; 
@@ -810,7 +915,7 @@ void loop() {
         }
     } 
     
-   if (!useMotionSensor && !client.connected()) {
+    if (!useMotionSensor && !client.connected()) {
     
         if (disconnectedTime == 0) {
             disconnectedTime = millis();  // Mark the time of disconnection
